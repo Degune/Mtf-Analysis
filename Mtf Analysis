@@ -1,0 +1,706 @@
+//@version=6
+indicator("Volentis Structure Chain v9", overlay=true, max_labels_count=500, max_lines_count=500)
+
+//====================================================
+// INPUTS
+//====================================================
+autoTF        = input.bool(true,  "Otomatik TF Ayarı (Swing Length)")
+swingLen      = input.int(10,     "Swing Length (Manuel)", minval=1)
+showRawPivots = input.bool(true,  "PH / PL Göster")
+showRefLines  = input.bool(true,  "Referans Çizgileri")
+showStruct    = input.bool(true,  "Structure Göster")
+showLHLabels  = input.bool(true,  "LH / HL Etiketleri Göster")
+showBOSLines  = input.bool(true,  "BOS Çizgilerini Göster")
+showCHOCHLines= input.bool(true,  "CHOCH Çizgilerini Göster")
+
+top1Col    = input.color(color.red,    "TOP1")
+top2Col    = input.color(color.orange, "TOP2")
+bot1Col    = input.color(color.green,  "BOT1")
+bot2Col    = input.color(color.teal,   "BOT2")
+top12Col   = input.color(color.yellow, "TOP_12")
+bot12Col   = input.color(color.lime,   "BOT_12")
+
+bosUpCol   = input.color(color.green,   "BOS UP")
+bosDnCol   = input.color(color.red,     "BOS DOWN")
+chochUpCol = input.color(color.aqua,    "CHOCH UP")
+chochDnCol = input.color(color.fuchsia, "CHOCH DOWN")
+
+hhCol = input.color(color.new(color.green,  0), "HH")
+hlCol = input.color(color.new(color.green, 35), "HL")
+llCol = input.color(color.new(color.red,    0), "LL")
+lhCol = input.color(color.new(color.red,   35), "LH")
+
+//====================================================
+// OTOMATİK SWING LENGTH
+//====================================================
+int tf_swingLen = swingLen
+if autoTF
+    tf_swingLen := switch timeframe.period
+        "1"   => 50
+        "3"   => 40
+        "5"   => 30
+        "15"  => 20
+        "30"  => 15
+        "60"  => 10
+        "120" => 8
+        "240" => 7
+        "D"   => 5
+        "W"   => 3
+        "M"   => 2
+        =>       10
+
+int MAX_CHAIN = 500
+
+//====================================================
+// STORAGE
+//====================================================
+var float[] pivotHighVals  = array.new_float()
+var int[]   pivotHighTimes = array.new_int()
+var int[]   pivotHighBars  = array.new_int()
+var float[] pivotLowVals   = array.new_float()
+var int[]   pivotLowTimes  = array.new_int()
+var int[]   pivotLowBars   = array.new_int()
+var float[] allCloses      = array.new_float()
+var int[]   allCloseBars   = array.new_int()
+var int[]   allCloseTimes  = array.new_int()
+var label[] drawnLabels    = array.new_label()
+var line[]  drawnLines     = array.new_line()
+
+//====================================================
+// PIVOTS + KAPANIŞLAR
+//====================================================
+ph = ta.pivothigh(high, tf_swingLen, tf_swingLen)
+pl = ta.pivotlow(low,   tf_swingLen, tf_swingLen)
+
+if not na(ph)
+    array.push(pivotHighVals,  ph)
+    array.push(pivotHighTimes, int(time[tf_swingLen]))
+    array.push(pivotHighBars,  bar_index - tf_swingLen)
+if not na(pl)
+    array.push(pivotLowVals,   pl)
+    array.push(pivotLowTimes,  int(time[tf_swingLen]))
+    array.push(pivotLowBars,   bar_index - tf_swingLen)
+array.push(allCloses,     close)
+array.push(allCloseBars,  bar_index)
+array.push(allCloseTimes, int(time))
+
+//====================================================
+// HELPERS
+//====================================================
+f_mid_time(int t1, int t2) =>
+    int(math.floor((t1 + t2) * 0.5))
+
+f_clear_all() =>
+    if array.size(drawnLabels) > 0
+        for i = 0 to array.size(drawnLabels) - 1
+            label.delete(array.get(drawnLabels, i))
+        array.clear(drawnLabels)
+    if array.size(drawnLines) > 0
+        for i = 0 to array.size(drawnLines) - 1
+            line.delete(array.get(drawnLines, i))
+        array.clear(drawnLines)
+
+f_label(int t, float y, string txt, st, color bg, color tc, sz) =>
+    label lb = label.new(t, y, txt, xloc=xloc.bar_time, style=st, color=bg, textcolor=tc, size=sz)
+    array.push(drawnLabels, lb)
+
+f_text(int t, float y, string txt, color tc, sz) =>
+    label lb = label.new(t, y, txt, xloc=xloc.bar_time, style=label.style_none, textcolor=tc, size=sz)
+    array.push(drawnLabels, lb)
+
+f_hline(int t1, float y, color c, st) =>
+    line ln = line.new(t1, y, time, y, xloc=xloc.bar_time, color=color.new(c, 55), width=1, style=st)
+    array.push(drawnLines, ln)
+
+f_find_low_between_val(int leftBar, int rightBar) =>
+    float out = na
+    if array.size(pivotLowBars) > 0
+        for i = 0 to array.size(pivotLowBars) - 1
+            int b = array.get(pivotLowBars, i)
+            if b > leftBar and b < rightBar
+                float v = array.get(pivotLowVals, i)
+                if na(out) or v < out
+                    out := v
+    out
+
+f_find_low_between_bar(int leftBar, int rightBar) =>
+    int out = na
+    float best = na
+    if array.size(pivotLowBars) > 0
+        for i = 0 to array.size(pivotLowBars) - 1
+            int b = array.get(pivotLowBars, i)
+            if b > leftBar and b < rightBar
+                float v = array.get(pivotLowVals, i)
+                if na(best) or v < best
+                    best := v
+                    out := b
+    out
+
+f_find_low_between_time(int leftBar, int rightBar) =>
+    int out = na
+    float best = na
+    if array.size(pivotLowBars) > 0
+        for i = 0 to array.size(pivotLowBars) - 1
+            int b = array.get(pivotLowBars, i)
+            if b > leftBar and b < rightBar
+                float v = array.get(pivotLowVals, i)
+                if na(best) or v < best
+                    best := v
+                    out := array.get(pivotLowTimes, i)
+    out
+
+f_find_high_between_val(int leftBar, int rightBar) =>
+    float out = na
+    if array.size(pivotHighBars) > 0
+        for i = 0 to array.size(pivotHighBars) - 1
+            int b = array.get(pivotHighBars, i)
+            if b > leftBar and b < rightBar
+                float v = array.get(pivotHighVals, i)
+                if na(out) or v > out
+                    out := v
+    out
+
+f_find_high_between_bar(int leftBar, int rightBar) =>
+    int out = na
+    float best = na
+    if array.size(pivotHighBars) > 0
+        for i = 0 to array.size(pivotHighBars) - 1
+            int b = array.get(pivotHighBars, i)
+            if b > leftBar and b < rightBar
+                float v = array.get(pivotHighVals, i)
+                if na(best) or v > best
+                    best := v
+                    out := b
+    out
+
+f_find_high_between_time(int leftBar, int rightBar) =>
+    int out = na
+    float best = na
+    if array.size(pivotHighBars) > 0
+        for i = 0 to array.size(pivotHighBars) - 1
+            int b = array.get(pivotHighBars, i)
+            if b > leftBar and b < rightBar
+                float v = array.get(pivotHighVals, i)
+                if na(best) or v > best
+                    best := v
+                    out := array.get(pivotHighTimes, i)
+    out
+
+f_next_high_after(int afterBar) =>
+    float outVal = na
+    int outBar = na
+    int outTime = na
+    if array.size(pivotHighBars) > 0
+        for i = 0 to array.size(pivotHighBars) - 1
+            int b = array.get(pivotHighBars, i)
+            if b > afterBar
+                outVal := array.get(pivotHighVals, i)
+                outBar := b
+                outTime := array.get(pivotHighTimes, i)
+                break
+    [outVal, outBar, outTime]
+
+f_next_low_after(int afterBar) =>
+    float outVal = na
+    int outBar = na
+    int outTime = na
+    if array.size(pivotLowBars) > 0
+        for i = 0 to array.size(pivotLowBars) - 1
+            int b = array.get(pivotLowBars, i)
+            if b > afterBar
+                outVal := array.get(pivotLowVals, i)
+                outBar := b
+                outTime := array.get(pivotLowTimes, i)
+                break
+    [outVal, outBar, outTime]
+
+f_first_close_above(int afterBar, float level) =>
+    int outBar = na
+    int outTime = na
+    if array.size(allCloseBars) > 0
+        for i = 0 to array.size(allCloseBars) - 1
+            int b = array.get(allCloseBars, i)
+            if b > afterBar and array.get(allCloses, i) > level
+                outBar := b
+                outTime := array.get(allCloseTimes, i)
+                break
+    [outBar, outTime]
+
+f_first_close_below(int afterBar, float level) =>
+    int outBar = na
+    int outTime = na
+    if array.size(allCloseBars) > 0
+        for i = 0 to array.size(allCloseBars) - 1
+            int b = array.get(allCloseBars, i)
+            if b > afterBar and array.get(allCloses, i) < level
+                outBar := b
+                outTime := array.get(allCloseTimes, i)
+                break
+    [outBar, outTime]
+
+f_is_lower_high(int idx) =>
+    bool result = false
+    if idx > 0 and idx < array.size(pivotHighBars)
+        int thisBar = array.get(pivotHighBars, idx)
+        float thisVal = array.get(pivotHighVals, idx)
+        float prevVal = array.get(pivotHighVals, idx - 1)
+        bool hasPrevLow = false
+        if array.size(pivotLowBars) > 0
+            for i = 0 to array.size(pivotLowBars) - 1
+                if array.get(pivotLowBars, i) < thisBar
+                    hasPrevLow := true
+                    break
+        result := hasPrevLow and thisVal < prevVal
+    result
+
+f_is_higher_low(int idx) =>
+    bool result = false
+    if idx > 0 and idx < array.size(pivotLowBars)
+        int thisBar = array.get(pivotLowBars, idx)
+        float thisVal = array.get(pivotLowVals, idx)
+        float prevVal = array.get(pivotLowVals, idx - 1)
+        bool hasPrevHigh = false
+        if array.size(pivotHighBars) > 0
+            for i = 0 to array.size(pivotHighBars) - 1
+                if array.get(pivotHighBars, i) < thisBar
+                    hasPrevHigh := true
+                    break
+        result := hasPrevHigh and thisVal > prevVal
+    result
+
+//====================================================
+// MTF - HER TF İÇİN CHOCH (HL=SHORT, LH=LONG)
+//====================================================
+f_get_choch(string tf, int piv_len) =>
+    float ph_tf = request.security(syminfo.tickerid, tf, ta.pivothigh(high, piv_len, piv_len), lookahead=barmerge.lookahead_off)
+    float pl_tf = request.security(syminfo.tickerid, tf, ta.pivotlow(low, piv_len, piv_len), lookahead=barmerge.lookahead_off)
+    float cls   = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off)
+    
+    float ph0 = na
+    float ph1 = na
+    int ph0Bar = na
+    int ph1Bar = na
+    if not na(ph_tf)
+        ph0 := ph_tf
+        ph0Bar := bar_index
+        ph1 := ta.valuewhen(not na(ph_tf), ph_tf, 1)
+        ph1Bar := ta.valuewhen(not na(ph_tf), bar_index, 1)
+    
+    float pl0 = na
+    float pl1 = na
+    int pl0Bar = na
+    int pl1Bar = na
+    if not na(pl_tf)
+        pl0 := pl_tf
+        pl0Bar := bar_index
+        pl1 := ta.valuewhen(not na(pl_tf), pl_tf, 1)
+        pl1Bar := ta.valuewhen(not na(pl_tf), bar_index, 1)
+    
+    int bias = 0
+    
+    bool isLH = not na(pl1Bar) and not na(ph0Bar) and pl1Bar < ph0Bar and ph0 < ph1
+    bool isHL = not na(ph1Bar) and not na(pl0Bar) and ph1Bar < pl0Bar and pl0 > pl1
+    
+    if isLH and cls > ph0
+        bias := 1
+    if isHL and cls < pl0
+        bias := -1
+    
+    bias
+
+dirM  = f_get_choch("M",   2)
+dirW  = f_get_choch("W",   3)
+dirD  = f_get_choch("D",   5)
+dir4H = f_get_choch("240", 7)
+dir1H = f_get_choch("60",  10)
+dir30 = f_get_choch("30",  15)
+dir15 = f_get_choch("15",  20)
+dir5  = f_get_choch("5",   30)
+dir1  = f_get_choch("1",   50)
+
+//====================================================
+// MAIN
+//====================================================
+var int currentState = 0
+var table dirTable = table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
+
+if barstate.islast
+    f_clear_all()
+
+    int topCount = array.size(pivotHighVals)
+    int botCount = array.size(pivotLowVals)
+
+    if showLHLabels
+        for i = 1 to topCount - 1
+            if f_is_lower_high(i)
+                f_label(array.get(pivotHighTimes, i), array.get(pivotHighVals, i), "LH", label.style_label_down, color.new(color.red, 80), color.white, size.tiny)
+        for i = 1 to botCount - 1
+            if f_is_higher_low(i)
+                f_label(array.get(pivotLowTimes, i), array.get(pivotLowVals, i), "HL", label.style_label_up, color.new(color.green, 80), color.white, size.tiny)
+
+    float top1Val = na
+    float top2Val = na
+    float bot1Val = na
+    float bot2Val = na
+    int top1Idx = -1
+    int top2Idx = -1
+    int bot1Idx = -1
+    int bot2Idx = -1
+    int top1Time = na
+    int top2Time = na
+    int bot1Time = na
+    int bot2Time = na
+    int top1Bar = na
+    int top2Bar = na
+    int bot1Bar = na
+    int bot2Bar = na
+
+    if topCount > 0
+        float best = -1e10
+        for i = 0 to topCount - 1
+            float v = array.get(pivotHighVals, i)
+            if v > best
+                best := v
+                top1Val := v
+                top1Idx := i
+                top1Time := array.get(pivotHighTimes, i)
+                top1Bar := array.get(pivotHighBars, i)
+    if top1Idx > 0
+        float best = -1e10
+        for i = 0 to top1Idx - 1
+            float v = array.get(pivotHighVals, i)
+            if v > best
+                best := v
+                top2Val := v
+                top2Idx := i
+                top2Time := array.get(pivotHighTimes, i)
+                top2Bar := array.get(pivotHighBars, i)
+
+    if botCount > 0
+        float best = 1e10
+        for i = 0 to botCount - 1
+            float v = array.get(pivotLowVals, i)
+            if v < best
+                best := v
+                bot1Val := v
+                bot1Idx := i
+                bot1Time := array.get(pivotLowTimes, i)
+                bot1Bar := array.get(pivotLowBars, i)
+    if bot1Idx > 0
+        float best = 1e10
+        for i = 0 to bot1Idx - 1
+            float v = array.get(pivotLowVals, i)
+            if v < best
+                best := v
+                bot2Val := v
+                bot2Idx := i
+                bot2Time := array.get(pivotLowTimes, i)
+                bot2Bar := array.get(pivotLowBars, i)
+
+    float bot12Val = na
+    int bot12Time = na
+    int bot12Bar = na
+    if not na(top2Bar) and not na(top1Bar)
+        for i = 0 to botCount - 1
+            int b = array.get(pivotLowBars, i)
+            if b > top2Bar and b < top1Bar
+                float v = array.get(pivotLowVals, i)
+                if na(bot12Val) or v < bot12Val
+                    bot12Val := v
+                    bot12Time := array.get(pivotLowTimes, i)
+                    bot12Bar := b
+
+    float top12Val = na
+    int top12Time = na
+    int top12Bar = na
+    if not na(bot2Bar) and not na(bot1Bar)
+        for i = 0 to topCount - 1
+            int b = array.get(pivotHighBars, i)
+            if b > bot2Bar and b < bot1Bar
+                float v = array.get(pivotHighVals, i)
+                if na(top12Val) or v > top12Val
+                    top12Val := v
+                    top12Time := array.get(pivotHighTimes, i)
+                    top12Bar := b
+
+    if showRawPivots
+        for i = math.max(0, topCount - 40) to topCount - 1
+            f_label(array.get(pivotHighTimes, i), array.get(pivotHighVals, i), "PH", label.style_label_down, color.new(color.gray, 70), color.white, size.tiny)
+        for i = math.max(0, botCount - 40) to botCount - 1
+            f_label(array.get(pivotLowTimes, i), array.get(pivotLowVals, i), "PL", label.style_label_up, color.new(color.gray, 70), color.white, size.tiny)
+
+    if not na(top1Val)
+        f_label(top1Time, top1Val, "TOP1", label.style_label_down, top1Col, color.white, size.normal)
+        if showRefLines
+            f_hline(top1Time, top1Val, top1Col, line.style_dashed)
+    if not na(top2Val)
+        f_label(top2Time, top2Val, "TOP2", label.style_label_down, top2Col, color.white, size.small)
+        if showRefLines
+            f_hline(top2Time, top2Val, top2Col, line.style_dotted)
+    if not na(bot1Val)
+        f_label(bot1Time, bot1Val, "BOT1", label.style_label_up, bot1Col, color.white, size.normal)
+        if showRefLines
+            f_hline(bot1Time, bot1Val, bot1Col, line.style_dashed)
+    if not na(bot2Val)
+        f_label(bot2Time, bot2Val, "BOT2", label.style_label_up, bot2Col, color.white, size.small)
+        if showRefLines
+            f_hline(bot2Time, bot2Val, bot2Col, line.style_dotted)
+    if not na(bot12Val)
+        f_label(bot12Time, bot12Val, "BOT_12", label.style_label_up,   bot12Col, color.black, size.small)
+    if not na(top12Val)
+        f_label(top12Time, top12Val, "TOP_12", label.style_label_down, top12Col, color.black, size.small)
+
+    if showStruct
+        int state = 0
+        int cursorBar = na
+        float activeHH = na
+        float activeHL = na
+        float activeLL = na
+        float activeLH = na
+        int activeHHBar = na
+        int activeHLBar = na
+        int activeLLBar = na
+        int activeLHBar = na
+        int activeHHTime = na
+        int activeHLTime = na
+        int activeLLTime = na
+        int activeLHTime = na
+
+        bool canBull = not na(top2Bar) and not na(bot12Bar)
+        bool canBear = not na(bot2Bar) and not na(top12Bar)
+
+        if canBull and canBear
+            if top2Bar <= bot2Bar
+                state := 1
+                cursorBar := top2Bar
+                activeHH := top2Val
+                activeHHBar := top2Bar
+                activeHHTime := top2Time
+                activeHL := bot12Val
+                activeHLBar := bot12Bar
+                activeHLTime := bot12Time
+            else
+                state := -1
+                cursorBar := bot2Bar
+                activeLL := bot2Val
+                activeLLBar := bot2Bar
+                activeLLTime := bot2Time
+                activeLH := top12Val
+                activeLHBar := top12Bar
+                activeLHTime := top12Time
+        else if canBull
+            state := 1
+            cursorBar := top2Bar
+            activeHH := top2Val
+            activeHHBar := top2Bar
+            activeHHTime := top2Time
+            activeHL := bot12Val
+            activeHLBar := bot12Bar
+            activeHLTime := bot12Time
+        else if canBear
+            state := -1
+            cursorBar := bot2Bar
+            activeLL := bot2Val
+            activeLLBar := bot2Bar
+            activeLLTime := bot2Time
+            activeLH := top12Val
+            activeLHBar := top12Bar
+            activeLHTime := top12Time
+
+        currentState := state
+
+        if state == 1
+            f_label(activeHHTime, activeHH, "HH", label.style_label_down, hhCol, color.white, size.tiny)
+            f_label(activeHLTime, activeHL, "HL", label.style_label_up,   hlCol, color.white, size.tiny)
+        else if state == -1
+            f_label(activeLLTime, activeLL, "LL", label.style_label_up,   llCol, color.white, size.tiny)
+            f_label(activeLHTime, activeLH, "LH", label.style_label_down, lhCol, color.white, size.tiny)
+
+        for step = 0 to MAX_CHAIN - 1
+            if state == 1 and not na(activeHHBar) and not na(activeHLBar)
+                [nextTopVal, nextTopBar, nextTopTime] = f_next_high_after(cursorBar)
+                [nextBotVal, nextBotBar, nextBotTime] = f_next_low_after(cursorBar)
+
+                bool hasTop = not na(nextTopBar)
+                bool hasBot = not na(nextBotBar)
+                if not hasTop and not hasBot
+                    break
+
+                if hasTop and (not hasBot or nextTopBar < nextBotBar)
+                    if nextTopVal > activeHH
+                        [confBar, confTime] = f_first_close_above(nextTopBar, activeHH)
+                        if not na(confBar)
+                            float newHL  = f_find_low_between_val(activeHHBar, nextTopBar)
+                            int   newHLB = f_find_low_between_bar(activeHHBar, nextTopBar)
+                            int   newHLT = f_find_low_between_time(activeHHBar, nextTopBar)
+                            if na(newHL)
+                                newHL := activeHL
+                                newHLB := activeHLBar
+                                newHLT := activeHLTime
+                            if showBOSLines
+                                line ln = line.new(activeHHTime, activeHH, confTime, activeHH, xloc=xloc.bar_time, color=bosUpCol, width=2, style=line.style_solid)
+                                array.push(drawnLines, ln)
+                                f_text(f_mid_time(activeHHTime, confTime), activeHH, "BOS ↑", bosUpCol, size.small)
+                            f_label(nextTopTime, nextTopVal, "HH", label.style_label_down, hhCol, color.white, size.tiny)
+                            f_label(newHLT, newHL, "HL", label.style_label_up, hlCol, color.white, size.tiny)
+                            activeHH := nextTopVal
+                            activeHHBar := nextTopBar
+                            activeHHTime := nextTopTime
+                            activeHL := newHL
+                            activeHLBar := newHLB
+                            activeHLTime := newHLT
+                            cursorBar := confBar
+                        else
+                            cursorBar := nextTopBar
+                    else
+                        cursorBar := nextTopBar
+                else
+                    if nextBotVal < activeHL
+                        float newLH  = f_find_high_between_val(activeHLBar, nextBotBar)
+                        int   newLHB = f_find_high_between_bar(activeHLBar, nextBotBar)
+                        int   newLHT = f_find_high_between_time(activeHLBar, nextBotBar)
+                        if na(newLH)
+                            newLH := activeHH
+                            newLHB := activeHHBar
+                            newLHT := activeHHTime
+                        if showCHOCHLines
+                            line ln = line.new(activeHLTime, activeHL, nextBotTime, activeHL, xloc=xloc.bar_time, color=chochDnCol, width=2, style=line.style_dashed)
+                            array.push(drawnLines, ln)
+                            f_text(f_mid_time(activeHLTime, nextBotTime), activeHL, "CHOCH ↓", chochDnCol, size.small)
+                        f_label(nextBotTime, nextBotVal, "LL", label.style_label_up,   llCol, color.white, size.tiny)
+                        f_label(newLHT, newLH, "LH", label.style_label_down, lhCol, color.white, size.tiny)
+                        activeLL := nextBotVal
+                        activeLLBar := nextBotBar
+                        activeLLTime := nextBotTime
+                        activeLH := newLH
+                        activeLHBar := newLHB
+                        activeLHTime := newLHT
+                        state := -1
+                        cursorBar := nextBotBar
+                        currentState := -1
+                    else
+                        cursorBar := nextBotBar
+
+            else if state == -1 and not na(activeLLBar) and not na(activeLHBar)
+                [nextTopVal2, nextTopBar2, nextTopTime2] = f_next_high_after(cursorBar)
+                [nextBotVal2, nextBotBar2, nextBotTime2] = f_next_low_after(cursorBar)
+
+                bool hasTop2 = not na(nextTopBar2)
+                bool hasBot2 = not na(nextBotBar2)
+                if not hasTop2 and not hasBot2
+                    break
+
+                if hasBot2 and (not hasTop2 or nextBotBar2 < nextTopBar2)
+                    if nextBotVal2 < activeLL
+                        [confBar2, confTime2] = f_first_close_below(nextBotBar2, activeLL)
+                        if not na(confBar2)
+                            float newLH  = f_find_high_between_val(activeLLBar, nextBotBar2)
+                            int   newLHB = f_find_high_between_bar(activeLLBar, nextBotBar2)
+                            int   newLHT = f_find_high_between_time(activeLLBar, nextBotBar2)
+                            if na(newLH)
+                                newLH := activeLH
+                                newLHB := activeLHBar
+                                newLHT := activeLHTime
+                            if showBOSLines
+                                line ln = line.new(activeLLTime, activeLL, confTime2, activeLL, xloc=xloc.bar_time, color=bosDnCol, width=2, style=line.style_solid)
+                                array.push(drawnLines, ln)
+                                f_text(f_mid_time(activeLLTime, confTime2), activeLL, "BOS ↓", bosDnCol, size.small)
+                            f_label(nextBotTime2, nextBotVal2, "LL", label.style_label_up,   llCol, color.white, size.tiny)
+                            f_label(newLHT, newLH, "LH", label.style_label_down, lhCol, color.white, size.tiny)
+                            activeLL := nextBotVal2
+                            activeLLBar := nextBotBar2
+                            activeLLTime := nextBotTime2
+                            activeLH := newLH
+                            activeLHBar := newLHB
+                            activeLHTime := newLHT
+                            cursorBar := confBar2
+                        else
+                            cursorBar := nextBotBar2
+                    else
+                        cursorBar := nextBotBar2
+                else
+                    if nextTopVal2 > activeLH
+                        float newHL  = f_find_low_between_val(activeLHBar, nextTopBar2)
+                        int   newHLB = f_find_low_between_bar(activeLHBar, nextTopBar2)
+                        int   newHLT = f_find_low_between_time(activeLHBar, nextTopBar2)
+                        if na(newHL)
+                            newHL := activeLL
+                            newHLB := activeLLBar
+                            newHLT := activeLLTime
+                        if showCHOCHLines
+                            line ln = line.new(activeLHTime, activeLH, nextTopTime2, activeLH, xloc=xloc.bar_time, color=chochUpCol, width=2, style=line.style_dashed)
+                            array.push(drawnLines, ln)
+                            f_text(f_mid_time(activeLHTime, nextTopTime2), activeLH, "CHOCH ↑", chochUpCol, size.small)
+                        f_label(nextTopTime2, nextTopVal2, "HH", label.style_label_down, hhCol, color.white, size.tiny)
+                        f_label(newHLT, newHL, "HL", label.style_label_up,   hlCol, color.white, size.tiny)
+                        activeHH := nextTopVal2
+                        activeHHBar := nextTopBar2
+                        activeHHTime := nextTopTime2
+                        activeHL := newHL
+                        activeHLBar := newHLB
+                        activeHLTime := newHLT
+                        state := 1
+                        cursorBar := nextTopBar2
+                        currentState := 1
+                    else
+                        cursorBar := nextTopBar2
+            else
+                break
+
+    //====================================================
+    // TABLE
+    //====================================================
+    table.delete(dirTable)
+    dirTable := table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
+
+    string cur = timeframe.period
+    color hdr_bg = color.new(color.black, 50)
+    table.cell(dirTable, 0, 0, "TF",  text_color=color.gray, text_size=size.small, bgcolor=hdr_bg)
+    table.cell(dirTable, 1, 0, "YÖN", text_color=color.gray, text_size=size.small, bgcolor=hdr_bg)
+
+    color bgM  = cur == "M"   ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bgW  = cur == "W"   ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bgD  = cur == "D"   ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bg4  = cur == "240" ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bg1h = cur == "60"  ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bg30 = cur == "30"  ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bg15 = cur == "15"  ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bg5  = cur == "5"   ? color.new(color.blue, 45) : color.new(color.black, 75)
+    color bg1  = cur == "1"   ? color.new(color.blue, 45) : color.new(color.black, 75)
+
+    string dirM_str  = dirM  == 1 ? "▲ LONG" : "▼ SHORT"
+    string dirW_str  = dirW  == 1 ? "▲ LONG" : "▼ SHORT"
+    string dirD_str  = dirD  == 1 ? "▲ LONG" : "▼ SHORT"
+    string dir4H_str = dir4H == 1 ? "▲ LONG" : "▼ SHORT"
+    string dir1H_str = dir1H == 1 ? "▲ LONG" : "▼ SHORT"
+    string dir30_str = dir30 == 1 ? "▲ LONG" : "▼ SHORT"
+    string dir15_str = dir15 == 1 ? "▲ LONG" : "▼ SHORT"
+    string dir5_str  = dir5  == 1 ? "▲ LONG" : "▼ SHORT"
+    string dir1_str  = dir1  == 1 ? "▲ LONG" : "▼ SHORT"
+
+    table.cell(dirTable, 0, 1, "MO",  text_color=color.white, text_size=size.small, bgcolor=bgM)
+    table.cell(dirTable, 1, 1, dirM_str,  text_color=dirM ==1?color.lime:color.red, text_size=size.small, bgcolor=bgM)
+
+    table.cell(dirTable, 0, 2, "W",   text_color=color.white, text_size=size.small, bgcolor=bgW)
+    table.cell(dirTable, 1, 2, dirW_str,  text_color=dirW ==1?color.lime:color.red, text_size=size.small, bgcolor=bgW)
+
+    table.cell(dirTable, 0, 3, "1D",  text_color=color.white, text_size=size.small, bgcolor=bgD)
+    table.cell(dirTable, 1, 3, dirD_str,  text_color=dirD ==1?color.lime:color.red, text_size=size.small, bgcolor=bgD)
+
+    table.cell(dirTable, 0, 4, "4H",  text_color=color.white, text_size=size.small, bgcolor=bg4)
+    table.cell(dirTable, 1, 4, dir4H_str, text_color=dir4H==1?color.lime:color.red, text_size=size.small, bgcolor=bg4)
+
+    table.cell(dirTable, 0, 5, "1H",  text_color=color.white, text_size=size.small, bgcolor=bg1h)
+    table.cell(dirTable, 1, 5, dir1H_str, text_color=dir1H==1?color.lime:color.red, text_size=size.small, bgcolor=bg1h)
+
+    table.cell(dirTable, 0, 6, "30M", text_color=color.white, text_size=size.small, bgcolor=bg30)
+    table.cell(dirTable, 1, 6, dir30_str, text_color=dir30==1?color.lime:color.red, text_size=size.small, bgcolor=bg30)
+
+    table.cell(dirTable, 0, 7, "15M", text_color=color.white, text_size=size.small, bgcolor=bg15)
+    table.cell(dirTable, 1, 7, dir15_str, text_color=dir15==1?color.lime:color.red, text_size=size.small, bgcolor=bg15)
+
+    table.cell(dirTable, 0, 8, "5M",  text_color=color.white, text_size=size.small, bgcolor=bg5)
+    table.cell(dirTable, 1, 8, dir5_str,  text_color=dir5 ==1?color.lime:color.red, text_size=size.small, bgcolor=bg5)
+
+    table.cell(dirTable, 0, 9, "1M",  text_color=color.white, text_size=size.small, bgcolor=bg1)
+    table.cell(dirTable, 1, 9, dir1_str,  text_color=dir1 ==1?color.lime:color.red, text_size=size.small, bgcolor=bg1)
