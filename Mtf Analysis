@@ -272,9 +272,9 @@ f_is_higher_low(int idx) =>
 // MTF - HER TF İÇİN CHOCH (HL=SHORT, LH=LONG)
 //====================================================
 f_get_choch(string tf, int piv_len) =>
-    float ph_tf = request.security(syminfo.tickerid, tf, ta.pivothigh(high, piv_len, piv_len), lookahead=barmerge.lookahead_off)
-    float pl_tf = request.security(syminfo.tickerid, tf, ta.pivotlow(low, piv_len, piv_len), lookahead=barmerge.lookahead_off)
-    float cls   = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off)
+    float ph_tf = request.security(syminfo.tickerid, tf, ta.pivothigh(high, piv_len, piv_len), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
+    float pl_tf = request.security(syminfo.tickerid, tf, ta.pivotlow(low, piv_len, piv_len), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
+    float cls   = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
     
     float ph0 = na
     float ph1 = na
@@ -322,7 +322,6 @@ dir1  = f_get_choch("1",   50)
 // MAIN
 //====================================================
 var int currentState = 0
-var table dirTable = table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
 
 if barstate.islast
     f_clear_all()
@@ -648,26 +647,19 @@ if barstate.islast
                 break
 
     //====================================================
-    // TABLE
+    // TABLE - ORTAK TEK TABLO (TÜM TF'LERİ GÖSTERİR)
     //====================================================
-    table.delete(dirTable)
-    dirTable := table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
-
-    string cur = timeframe.period
+    var table dirTable = na
+    
+    if na(dirTable)
+        dirTable := table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
+    
+    table.clear(dirTable)
+    
     color hdr_bg = color.new(color.black, 50)
     table.cell(dirTable, 0, 0, "TF",  text_color=color.gray, text_size=size.small, bgcolor=hdr_bg)
     table.cell(dirTable, 1, 0, "YÖN", text_color=color.gray, text_size=size.small, bgcolor=hdr_bg)
-
-    color bgM  = cur == "M"   ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bgW  = cur == "W"   ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bgD  = cur == "D"   ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bg4  = cur == "240" ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bg1h = cur == "60"  ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bg30 = cur == "30"  ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bg15 = cur == "15"  ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bg5  = cur == "5"   ? color.new(color.blue, 45) : color.new(color.black, 75)
-    color bg1  = cur == "1"   ? color.new(color.blue, 45) : color.new(color.black, 75)
-
+    
     string dirM_str  = dirM  == 1 ? "▲ LONG" : "▼ SHORT"
     string dirW_str  = dirW  == 1 ? "▲ LONG" : "▼ SHORT"
     string dirD_str  = dirD  == 1 ? "▲ LONG" : "▼ SHORT"
@@ -677,30 +669,30 @@ if barstate.islast
     string dir15_str = dir15 == 1 ? "▲ LONG" : "▼ SHORT"
     string dir5_str  = dir5  == 1 ? "▲ LONG" : "▼ SHORT"
     string dir1_str  = dir1  == 1 ? "▲ LONG" : "▼ SHORT"
-
-    table.cell(dirTable, 0, 1, "MO",  text_color=color.white, text_size=size.small, bgcolor=bgM)
-    table.cell(dirTable, 1, 1, dirM_str,  text_color=dirM ==1?color.lime:color.red, text_size=size.small, bgcolor=bgM)
-
-    table.cell(dirTable, 0, 2, "W",   text_color=color.white, text_size=size.small, bgcolor=bgW)
-    table.cell(dirTable, 1, 2, dirW_str,  text_color=dirW ==1?color.lime:color.red, text_size=size.small, bgcolor=bgW)
-
-    table.cell(dirTable, 0, 3, "1D",  text_color=color.white, text_size=size.small, bgcolor=bgD)
-    table.cell(dirTable, 1, 3, dirD_str,  text_color=dirD ==1?color.lime:color.red, text_size=size.small, bgcolor=bgD)
-
-    table.cell(dirTable, 0, 4, "4H",  text_color=color.white, text_size=size.small, bgcolor=bg4)
-    table.cell(dirTable, 1, 4, dir4H_str, text_color=dir4H==1?color.lime:color.red, text_size=size.small, bgcolor=bg4)
-
-    table.cell(dirTable, 0, 5, "1H",  text_color=color.white, text_size=size.small, bgcolor=bg1h)
-    table.cell(dirTable, 1, 5, dir1H_str, text_color=dir1H==1?color.lime:color.red, text_size=size.small, bgcolor=bg1h)
-
-    table.cell(dirTable, 0, 6, "30M", text_color=color.white, text_size=size.small, bgcolor=bg30)
-    table.cell(dirTable, 1, 6, dir30_str, text_color=dir30==1?color.lime:color.red, text_size=size.small, bgcolor=bg30)
-
-    table.cell(dirTable, 0, 7, "15M", text_color=color.white, text_size=size.small, bgcolor=bg15)
-    table.cell(dirTable, 1, 7, dir15_str, text_color=dir15==1?color.lime:color.red, text_size=size.small, bgcolor=bg15)
-
-    table.cell(dirTable, 0, 8, "5M",  text_color=color.white, text_size=size.small, bgcolor=bg5)
-    table.cell(dirTable, 1, 8, dir5_str,  text_color=dir5 ==1?color.lime:color.red, text_size=size.small, bgcolor=bg5)
-
-    table.cell(dirTable, 0, 9, "1M",  text_color=color.white, text_size=size.small, bgcolor=bg1)
-    table.cell(dirTable, 1, 9, dir1_str,  text_color=dir1 ==1?color.lime:color.red, text_size=size.small, bgcolor=bg1)
+    
+    table.cell(dirTable, 0, 1, "MO",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 1, dirM_str,  text_color=dirM ==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 2, "W",   text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 2, dirW_str,  text_color=dirW ==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 3, "1D",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 3, dirD_str,  text_color=dirD ==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 4, "4H",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 4, dir4H_str, text_color=dir4H==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 5, "1H",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 5, dir1H_str, text_color=dir1H==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 6, "30M", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 6, dir30_str, text_color=dir30==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 7, "15M", text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 7, dir15_str, text_color=dir15==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 8, "5M",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 8, dir5_str,  text_color=dir5 ==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
+    
+    table.cell(dirTable, 0, 9, "1M",  text_color=color.white, text_size=size.small, bgcolor=color.new(color.black, 75))
+    table.cell(dirTable, 1, 9, dir1_str,  text_color=dir1 ==1?color.lime:color.red, text_size=size.small, bgcolor=color.new(color.black, 75))
