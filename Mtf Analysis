@@ -651,10 +651,8 @@ if barstate.islast
     //====================================================
     var table dirTable = na
     
-    if na(dirTable)
-        dirTable := table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
-    
-    table.clear(dirTable)
+    // Tabloyu her bar'da yeniden oluşturarak clear hatasını önlüyoruz
+    dirTable := table.new(position.top_right, 2, 10, border_width=1, border_color=color.gray, frame_color=color.gray, frame_width=1)
     
     color hdr_bg = color.new(color.black, 50)
     table.cell(dirTable, 0, 0, "TF",  text_color=color.gray, text_size=size.small, bgcolor=hdr_bg)
