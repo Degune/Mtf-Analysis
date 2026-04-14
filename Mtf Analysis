@@ -276,34 +276,34 @@ f_get_choch(string tf, int piv_len) =>
     float pl_tf = request.security(syminfo.tickerid, tf, ta.pivotlow(low, piv_len, piv_len), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
     float cls   = request.security(syminfo.tickerid, tf, close, lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
     
-    float ph0 = na
-    float ph1 = na
-    int ph0Bar = na
-    int ph1Bar = na
+    var float ph0 = na
+    var float ph1 = na
+    var int ph0Bar = na
+    var int ph1Bar = na
     if not na(ph_tf)
+        ph1 := ph0
+        ph1Bar := ph0Bar
         ph0 := ph_tf
         ph0Bar := bar_index
-        ph1 := ta.valuewhen(not na(ph_tf), ph_tf, 1)
-        ph1Bar := ta.valuewhen(not na(ph_tf), bar_index, 1)
     
-    float pl0 = na
-    float pl1 = na
-    int pl0Bar = na
-    int pl1Bar = na
+    var float pl0 = na
+    var float pl1 = na
+    var int pl0Bar = na
+    var int pl1Bar = na
     if not na(pl_tf)
+        pl1 := pl0
+        pl1Bar := pl0Bar
         pl0 := pl_tf
         pl0Bar := bar_index
-        pl1 := ta.valuewhen(not na(pl_tf), pl_tf, 1)
-        pl1Bar := ta.valuewhen(not na(pl_tf), bar_index, 1)
     
-    int bias = 0
+    var int bias = 0
     
     bool isLH = not na(pl1Bar) and not na(ph0Bar) and pl1Bar < ph0Bar and ph0 < ph1
     bool isHL = not na(ph1Bar) and not na(pl0Bar) and ph1Bar < pl0Bar and pl0 > pl1
     
     if isLH and cls > ph0
         bias := 1
-    if isHL and cls < pl0
+    else if isHL and cls < pl0
         bias := -1
     
     bias
